@@ -18,10 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "ssd1306.h"
-#include "ssd1306_fonts.h"
-#include "stm32l4xx_hal.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -50,6 +46,51 @@ UART_HandleTypeDef huart1;
 /* USER CODE BEGIN PV */
 LSM6DSL_Object_t MotionSensor;
 volatile uint32_t dataRdyIntReceived;
+
+/* USER CODE BEGIN PV */
+/* existing vars ... */
+
+#define WINDOW_SIZE 40
+#define NUM_FEATURES 6
+#define MODEL_INPUT_SIZE (WINDOW_SIZE * NUM_FEATURES) // 240
+
+/* Put the real numbers you printed from Python here */
+// static const float scaler_mean[NUM_FEATURES] = {/* e.g. -0.01, 0.02, ... */};
+// static const float scaler_scale[NUM_FEATURES] = {/* e.g. 0.98, 1.02, ... */};
+static const float scaler_mean[NUM_FEATURES] = {
+    -0.12441810504811437, -0.3559780137995743, -0.45115355966812687,
+    -0.2609845578559185,  1.1738487249314078,  0.30543802135980275};
+static const float scaler_scale[NUM_FEATURES] = {
+    1.707759339926897,  1.8599862252629156, 2.7341685924809713,
+    0.8088201806264358, 1.9792116598123928, 3.675394912367162};
+
+/* Quant params (replace with analyzer-generated values if different) */
+static const float MODEL_INPUT_SCALE = 0.119718373f;
+static const int MODEL_INPUT_ZP = 25; /* zero point */
+static const float MODEL_OUTPUT_SCALE = 0.00390625f;
+static const int MODEL_OUTPUT_ZP = -128;
+
+/* sliding buffer for raw samples (int16 or float) */
+static int32_t sample_buffer[WINDOW_SIZE]
+                            [NUM_FEATURES]; // raw readings copy; use int32 to
+                                            // hold raw LSM6DSL values
+static uint16_t sample_count = 0;
+
+/* model input in quantized int8 form */
+static int8_t model_input[MODEL_INPUT_SIZE];
+
+/* model output (int8, 5 classes) */
+static int8_t model_output[5];
+
+/* Cube.AI handle (declared here) */
+static ai_handle model = AI_HANDLE_NULL;
+
+/* activation buffer: Cube.AI generated macro defines size, but show a fallback
+ */
+#ifndef AI_HARSH_DETECTION_PROTOTYPE_DATA_ACTIVATIONS_SIZE
+#define AI_HARSH_DETECTION_PROTOTYPE_DATA_ACTIVATIONS_SIZE (8192)
+#endif
+static uint8_t activations[AI_HARSH_DETECTION_PROTOTYPE_DATA_ACTIVATIONS_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -107,6 +148,30 @@ int main(void) {
 
   // The lcd library init
   ssd1306_Init();
+  /* USER CODE BEGIN 2 */
+  /* after ssd1306_Init() etc. */
+
+  ai_error err;
+  ai_network_params params = {
+      .params = AI_HARSH_DETECTION_PROTOTYPE_DATA_WEIGHTS(0),
+      .activations =
+          AI_HARSH_DETECTION_PROTOTYPE_DATA_ACTIVATIONS(activations)};
+
+  /* create the network */
+  err = ai_harsh_detection_prototype_create(
+      &model, AI_HARSH_DETECTION_PROTOTYPE_DATA_CONFIG);
+  if (err.type != AI_ERROR_NONE) {
+    printf("AI create error: %d\n", err.type);
+    Error_Handler();
+  }
+
+  /* initialize the network */
+  if (!ai_harsh_detection_prototype_init(model, &params)) {
+    printf("AI init failed\n");
+    Error_Handler();
+  }
+
+  /* USER CODE END 2 */
 
   // Clearing the screen
   ssd1306_Fill(Black);
@@ -125,40 +190,158 @@ int main(void) {
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  /* USER CODE BEGIN WHILE */
   while (1) {
-    /* USER CODE END WHILE */
     if (dataRdyIntReceived != 0) {
-      // CLear the LCD
-      ssd1306_Fill(Black);
-
       dataRdyIntReceived = 0;
 
-      // Get the accelerometer values
+      /* read accel & gyro (if radar or gyro not configured, set zeros) */
       LSM6DSL_Axes_t acc_axes;
+      LSM6DSL_Axes_t gyro_axes;
       LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
+      // if you have gyro API call it: LSM6DSL_GYRO_GetAxes(&MotionSensor,
+      // &gyro_axes); if not, zero the gyro values:
+      gyro_axes.x = 0;
+      gyro_axes.y = 0;
+      gyro_axes.z = 0;
 
-      printf("% 5d, % 5d, % 5d\r\n", acc_axes.x, acc_axes.y, acc_axes.z);
+      /* Append new sample to circular buffer */
+      uint16_t idx = sample_count % WINDOW_SIZE;
+      sample_buffer[idx][0] = acc_axes.x;
+      sample_buffer[idx][1] = acc_axes.y;
+      sample_buffer[idx][2] = acc_axes.z;
+      sample_buffer[idx][3] = gyro_axes.x;
+      sample_buffer[idx][4] = gyro_axes.y;
+      sample_buffer[idx][5] = gyro_axes.z;
 
-      char buffer[32];
+      sample_count++;
 
-      sprintf(buffer, "X: %d", acc_axes.x); // Making the string that is to be displayed on the lcd
-      ssd1306_SetCursor(0, 0);
-      ssd1306_WriteString(buffer, Font_11x18, White);
+      /* If we have a full window, prepare input and run model */
+      if (sample_count >= WINDOW_SIZE) {
+        /* Important: your model expects data in the exact order & preprocessing
+           used during training. This code assumes StandardScaler was trained on
+           the same raw units (acc/gyro). Apply the scaler: (x - mean) / scale
+        */
 
-      sprintf(buffer, "Y: %d", acc_axes.y);
-      ssd1306_SetCursor(0, 23);
-      ssd1306_WriteString(buffer, Font_11x18, White);
+        /* Prepare quantized input: model_input[] length = 240 (40*6) */
+        for (int i = 0; i < WINDOW_SIZE; ++i) {
+          /* sliding window order: oldest->newest
+             compute the right index into circular buffer */
+          int buf_idx = (sample_count - WINDOW_SIZE + i) % WINDOW_SIZE;
+          if (buf_idx < 0)
+            buf_idx += WINDOW_SIZE;
 
-      sprintf(buffer, "Z: %d", acc_axes.z);
-      ssd1306_SetCursor(0, 45);
-      ssd1306_WriteString(buffer, Font_11x18, White);
+          for (int ch = 0; ch < NUM_FEATURES; ++ch) {
+            float raw = (float)sample_buffer[buf_idx][ch];
+            /* apply StandardScaler used in training */
+            float norm = (raw - scaler_mean[ch]) / scaler_scale[ch];
 
-      ssd1306_UpdateScreen();
+            /* quantize to int8: q = round(norm / MODEL_INPUT_SCALE) +
+             * MODEL_INPUT_ZP */
+            int32_t q =
+                (int32_t)lrintf(norm / MODEL_INPUT_SCALE) + MODEL_INPUT_ZP;
+            if (q > 127)
+              q = 127;
+            if (q < -128)
+              q = -128;
+            model_input[i * NUM_FEATURES + ch] = (int8_t)q;
+          }
+        }
 
+        /* Now call the generated run function. Use the exact signature Cube.AI
+           produced. Most generated examples use ai_buffer and
+           ai_harsh_detection_prototype_run(...). A very simple wrapper often
+           exists; here's a generic call:
+        */
+
+        /* build ai_buffer structures - use the generated helpers if present */
+        /* This snippet uses the raw run API which many Cube.AI examples expose:
+           int ai_harsh_detection_prototype_run(ai_handle network, const
+           ai_buffer* input, ai_buffer* output)
+        */
+        /* If your project provides helpers, follow that instead. */
+
+        /* Prepare buffers using the generated macros if available: */
+#ifdef AI_HARSH_DETECTION_PROTOTYPE_IN_1_SIZE
+        /* Example using generated buffer macros if present (preferred) */
+        // ai_buffer ai_input[AI_HARSH_DETECTION_PROTOTYPE_IN_NUM] =
+        //     AI_HARSH_DETECTION_PROTOTYPE_IN;
+        // ai_buffer ai_output[AI_HARSH_DETECTION_PROTOTYPE_OUT_NUM] =
+        //     AI_HARSH_DETECTION_PROTOTYPE_OUT;
+        // /* assign data pointers */
+        // ai_input[0].data = AI_HANDLE_PTR(model_input);
+        // ai_output[0].data = AI_HANDLE_PTR(model_output);
+        ai_buffer *ai_input =
+            ai_harsh_detection_prototype_inputs_get(model, NULL);
+        ai_buffer *ai_output =
+            ai_harsh_detection_prototype_outputs_get(model, NULL);
+
+        if (ai_input == NULL || ai_output == NULL) {
+          printf("Failed to get ai buffers from generated API\n");
+          Error_Handler();
+        }
+
+        /* override data pointers to point to your quantized buffers */
+        ai_input[0].data = AI_HANDLE_PTR(model_input);
+        ai_output[0].data = AI_HANDLE_PTR(model_output);
+
+        if (ai_harsh_detection_prototype_run(model, &ai_input[0],
+                                             &ai_output[0]) != 1) {
+          printf("AI run failed\n");
+        }
+#else
+        /* Minimal fallback: many generated examples provide a simple run
+         * wrapper */
+        int res = ai_harsh_detection_prototype_run(
+            model,
+            (const void *)
+                model_input,       /* input ptr - adapt if signature differs */
+            (void *)model_output); /* output ptr  */
+        /* If your generated API differs, adapt accordingly. */
+#endif
+
+        /* Convert quantized outputs to float scores and find argmax */
+        // float scores[5];
+        int best_idx = 0;
+        float best_score = -1e9f;
+        for (int k = 0; k < 5; ++k) {
+          int8_t q = model_output[k];
+          float val = ((float)((int)q - MODEL_OUTPUT_ZP)) * MODEL_OUTPUT_SCALE;
+          // scores[k] = val;
+          if (val > best_score) {
+            best_score = val;
+            best_idx = k;
+          }
+        }
+
+        /* Display predicted class & confidence on LCD */
+        char buf[32];
+        const char *labels[5] = {"Normal", "Brake", "Accel", "Right", "Left"};
+        sprintf(buf, "%s", labels[best_idx]);
+        ssd1306_Fill(Black);
+        ssd1306_SetCursor(0, 0);
+        ssd1306_WriteString(buf, Font_11x18, White);
+        sprintf(buf, "score: %.2f", best_score);
+        ssd1306_SetCursor(0, 30);
+        ssd1306_WriteString(buf, Font_7x10, White);
+        ssd1306_UpdateScreen();
+
+        /* Optionally shift the buffer by step (if overlapping windows). In your
+           training you used step=10. To mimic training sliding-window behavior,
+           you can retain last 30 samples and continue collecting. Easiest:
+           decrement sample_count by STEP so next inference starts after a
+           stride.
+        */
+        sample_count -=
+            10; // STEP_SIZE = 10; ensures overlapping windows like training
+      }
+
+      /* small debounce/delay or not depending on sampling ODR */
       HAL_Delay(1000);
     }
     /* USER CODE BEGIN 3 */
   }
+
   /* USER CODE END 3 */
 }
 

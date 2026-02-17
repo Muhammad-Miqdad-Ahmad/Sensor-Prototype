@@ -36,6 +36,11 @@ extern "C" {
 #include "lsm6dsl.h"
 #include "ssd1306_fonts.h"
 #include "b_l475e_iot01a1_bus.h"
+
+// AI related files
+#include "harsh_detection_prototype.h"
+#include "ai_platform.h"            
+#include "harsh_detection_prototype_data.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

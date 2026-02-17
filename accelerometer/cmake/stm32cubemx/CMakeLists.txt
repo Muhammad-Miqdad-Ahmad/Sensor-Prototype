@@ -13,6 +13,8 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../X-CUBE-MEMS1/Target
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/BSP/B-L475E-IOT01A1
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/AI/Inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../X-CUBE-AI/App
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Inc
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Device/ST/STM32L4xx/Include
@@ -27,6 +29,9 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_hal_msp.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sysmem.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/syscalls.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../X-CUBE-AI/App/harsh_detection_prototype_data.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../X-CUBE-AI/App/harsh_detection_prototype.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../X-CUBE-AI/App/harsh_detection_prototype_data_params.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../startup_stm32l475xx.s
 )
 
@@ -62,9 +67,11 @@ set(STM32_Drivers_Src
 # Link directories setup
 set(MX_LINK_DIRS
 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/AI/Lib
 )
 # Project static libraries
-set(MX_LINK_LIBS 
+set(MX_LINK_LIBS  
+	:NetworkRuntime1020_CM4_GCC.a
     STM32_Drivers
     ${TOOLCHAIN_LINK_LIBRARIES}
     
