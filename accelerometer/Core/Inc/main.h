@@ -31,7 +31,11 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include "ssd1306.h"
+#include "lsm6dsl.h"
+#include "ssd1306_fonts.h"
+#include "b_l475e_iot01a1_bus.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
