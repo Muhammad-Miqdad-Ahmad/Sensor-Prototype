@@ -21,6 +21,7 @@
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
 #include "stm32l4xx_hal.h"
+#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -120,7 +121,7 @@ int main(void) {
   ssd1306_WriteString("LED working now", Font_7x10, White);
 
   ssd1306_UpdateScreen();
-  HAL_Delay(5000);
+  HAL_Delay(1000);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -134,28 +135,50 @@ int main(void) {
       dataRdyIntReceived = 0;
 
       // Get the accelerometer values
-      LSM6DSL_Axes_t acc_axes;
+      LSM6DSL_Axes_t acc_axes, gyro_axes;
       LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
+      LSM6DSL_GYRO_GetAxes(&MotionSensor, &gyro_axes);
 
       printf("% 5d, % 5d, % 5d\r\n", acc_axes.x, acc_axes.y, acc_axes.z);
+      printf("% 5d, % 5d, % 5d\r\n", gyro_axes.x, gyro_axes.y, gyro_axes.z);
 
       char buffer[32];
 
-      sprintf(buffer, "X: %d", acc_axes.x); // Making the string that is to be displayed on the lcd
+      sprintf(buffer, "X: %d", acc_axes.x);
       ssd1306_SetCursor(0, 0);
-      ssd1306_WriteString(buffer, Font_11x18, White);
+      ssd1306_WriteString(buffer, Font_7x10, White);
 
       sprintf(buffer, "Y: %d", acc_axes.y);
-      ssd1306_SetCursor(0, 23);
-      ssd1306_WriteString(buffer, Font_11x18, White);
+      ssd1306_SetCursor(0, 10);
+      ssd1306_WriteString(buffer, Font_7x10, White);
 
       sprintf(buffer, "Z: %d", acc_axes.z);
-      ssd1306_SetCursor(0, 45);
-      ssd1306_WriteString(buffer, Font_11x18, White);
+      ssd1306_SetCursor(0, 20);
+      ssd1306_WriteString(buffer, Font_7x10, White);
+      sprintf(buffer, "X: %d", gyro_axes.x);
+
+      ssd1306_SetCursor(0, 33);
+      ssd1306_WriteString(buffer, Font_7x10, White);
+
+      sprintf(buffer, "Y: %d", gyro_axes.y);
+      ssd1306_SetCursor(0, 43);
+      ssd1306_WriteString(buffer, Font_7x10, White);
+
+      sprintf(buffer, "Z: %d", gyro_axes.z);
+      ssd1306_SetCursor(0, 53);
+      ssd1306_WriteString(buffer, Font_7x10, White);
 
       ssd1306_UpdateScreen();
 
-      HAL_Delay(1000);
+      HAL_Delay(100);
+    }
+    else {
+    printf("No Data to display\n");
+    ssd1306_Fill(Black);
+    ssd1306_SetCursor(0, 0);
+    ssd1306_WriteString("Error", Font_7x10, White);
+    ssd1306_UpdateScreen();
+    dataRdyIntReceived = 1;
     }
     /* USER CODE BEGIN 3 */
   }
@@ -577,13 +600,18 @@ static void MEMS_Init(void) {
   /* Configure the LSM6DSL accelerometer (ODR, scale and interrupt) */
   LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 26.0f); /* 26 Hz */
   LSM6DSL_ACC_SetFullScale(&MotionSensor, 4);
+  LSM6DSL_GYRO_SetOutputDataRate(&MotionSensor, 26.0f); /* 26 Hz */
+  LSM6DSL_GYRO_SetFullScale(&MotionSensor, 2000);
   /* [-4000mg; +4000mg] */
   LSM6DSL_ACC_Set_INT1_DRDY(&MotionSensor, ENABLE);
+  LSM6DSL_GYRO_Set_INT1_DRDY(&MotionSensor, ENABLE);
   /* Enable DRDY */
   LSM6DSL_ACC_GetAxesRaw(&MotionSensor, &axes);
+  LSM6DSL_GYRO_GetAxesRaw(&MotionSensor, &axes);
   /* Get axes */
   /* Start the LSM6DSL accelerometer */
   LSM6DSL_ACC_Enable(&MotionSensor);
+  LSM6DSL_GYRO_Enable(&MotionSensor);
 }
 /* USER CODE END 4 */
 
