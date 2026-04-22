@@ -1,7 +1,7 @@
 {
     "_allocate_inputs": 0,
     "_allocate_outputs": 0,
-    "cli_parameters": "analyze --name network -m /home/cyber-surge/Work/Uni/Finel-Year-Project/Sensor-Prototype/accelerometer/sine_model.tflite --type tflite --compression 1 --verbosity 1 --workspace /tmp/mxAI_workspace15325005372123813160149964022939 --output /home/cyber-surge/.stm32cubemx",
+    "cli_parameters": "generate --name sine -m /home/cyber-surge/Work/Uni/Finel-Year-Project/Sensor-Prototype/accelerometer/sine_model.tflite --type tflite --compression 1 --verbosity 1 --workspace /tmp/mxAI_workspace52410348374119561294204447452343 --output /home/cyber-surge/.stm32cubemx",
     "cli_version": {
         "major": 1,
         "micro": 1,
@@ -12,10 +12,10 @@
         "factor": null,
         "layers": {}
     },
-    "date_time": "Sat Apr 18 15:19:47 2026",
+    "date_time": "Wed Apr 22 19:52:04 2026",
     "error": 0,
     "error_str": [],
-    "exec_cmd": "analyze",
+    "exec_cmd": "generate",
     "exec_duration": 0.0,
     "hash": "011b10f421415eaceec6fa2524cf429c",
     "inputs": [
@@ -184,7 +184,7 @@
     "model_name": "sine_model",
     "model_size": 1540,
     "model_type": "tflite",
-    "name": "network",
+    "name": "sine",
     "outputs": [
         "dense_2"
     ],

@@ -36,6 +36,10 @@ extern "C" {
 #include "lsm6dsl.h"
 #include "ssd1306_fonts.h"
 #include "b_l475e_iot01a1_bus.h"
+#include "ssd1306.h"
+#include "ssd1306_fonts.h"
+#include "stm32l4xx_hal.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

@@ -18,10 +18,15 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "ssd1306.h"
-#include "ssd1306_fonts.h"
-#include "stm32l4xx_hal.h"
+
+#include "ai_datatypes_defines.h"
+#include "ai_platform.h"
+#include "sine.h"
+#include "sine_data.h"
+#include "stm32l4xx_hal_uart.h"
+#include <stdint.h>
 #include <stdio.h>
+#include <sys/_intsup.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -44,6 +49,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+CRC_HandleTypeDef hcrc;
+
 I2C_HandleTypeDef hi2c1;
 
 UART_HandleTypeDef huart1;
@@ -58,6 +65,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 static void MEMS_Init(void);
 int _write(int fd, char *ptr, int len);
@@ -76,6 +84,28 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
 int main(void) {
 
   /* USER CODE BEGIN 1 */
+  ai_error ai_err;
+  ai_i32 nbatch;
+  float y_val;
+
+  AI_ALIGNED(4) ai_u8 activations[AI_SINE_DATA_ACTIVATIONS_SIZE];
+
+  AI_ALIGNED(4) ai_i8 in_data[AI_SINE_IN_1_SIZE_BYTES];
+  AI_ALIGNED(4) ai_i8 out_data[AI_SINE_OUT_1_SIZE_BYTES];
+
+  ai_handle sine = AI_HANDLE_NULL;
+
+  ai_buffer ai_input[AI_SINE_IN_NUM] = AI_SINE_IN;
+  ai_buffer ai_output[AI_SINE_OUT_NUM] = AI_SINE_OUT;
+
+  ai_network_params ai_params = {
+      AI_SINE_DATA_WEIGHTS(ai_sine_data_weights_get()),
+      AI_SINE_DATA_ACTIVATIONS(activations)};
+
+  ai_input[0].n_batches = 1;
+  ai_input[0].data = AI_HANDLE_PTR(in_data);
+  ai_output[0].n_batches = 1;
+  ai_output[0].data = AI_HANDLE_PTR(out_data);
 
   /* USER CODE END 1 */
 
@@ -100,6 +130,7 @@ int main(void) {
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_USART1_UART_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
 
   dataRdyIntReceived = 0;
@@ -122,64 +153,97 @@ int main(void) {
 
   ssd1306_UpdateScreen();
   HAL_Delay(1000);
+
+  printf("Lets see what is going on");
+
+  ai_err = ai_sine_create(&sine, AI_SINE_DATA_CONFIG);
+
+  if (ai_err.type != AI_ERROR_NONE) {
+    printf("Error: could not create NN instance\r\n");
+    while (1)
+      ;
+  }
+
+  if (!ai_sine_init(sine, &ai_params)) {
+    printf("Error: could not create initialize the model\r\n");
+    while (1)
+      ;
+  }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
     /* USER CODE END WHILE */
-    if (dataRdyIntReceived != 0) {
-      // CLear the LCD
-      ssd1306_Fill(Black);
 
-      dataRdyIntReceived = 0;
-
-      // Get the accelerometer values
-      LSM6DSL_Axes_t acc_axes, gyro_axes;
-      LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
-      LSM6DSL_GYRO_GetAxes(&MotionSensor, &gyro_axes);
-
-      printf("% 5d, % 5d, % 5d\r\n", acc_axes.x, acc_axes.y, acc_axes.z);
-      printf("% 5d, % 5d, % 5d\r\n", gyro_axes.x, gyro_axes.y, gyro_axes.z);
-
-      char buffer[32];
-
-      sprintf(buffer, "X: %d", acc_axes.x);
-      ssd1306_SetCursor(0, 0);
-      ssd1306_WriteString(buffer, Font_7x10, White);
-
-      sprintf(buffer, "Y: %d", acc_axes.y);
-      ssd1306_SetCursor(0, 10);
-      ssd1306_WriteString(buffer, Font_7x10, White);
-
-      sprintf(buffer, "Z: %d", acc_axes.z);
-      ssd1306_SetCursor(0, 20);
-      ssd1306_WriteString(buffer, Font_7x10, White);
-      sprintf(buffer, "X: %d", gyro_axes.x);
-
-      ssd1306_SetCursor(0, 33);
-      ssd1306_WriteString(buffer, Font_7x10, White);
-
-      sprintf(buffer, "Y: %d", gyro_axes.y);
-      ssd1306_SetCursor(0, 43);
-      ssd1306_WriteString(buffer, Font_7x10, White);
-
-      sprintf(buffer, "Z: %d", gyro_axes.z);
-      ssd1306_SetCursor(0, 53);
-      ssd1306_WriteString(buffer, Font_7x10, White);
-
-      ssd1306_UpdateScreen();
-
-      HAL_Delay(100);
+    for (uint32_t i = 0; i < AI_SINE_IN_1_SIZE; i++) {
+      ((ai_float *)in_data)[0] = (ai_float)2.0f;
     }
-    else {
-    printf("No Data to display\n");
-    ssd1306_Fill(Black);
-    ssd1306_SetCursor(0, 0);
-    ssd1306_WriteString("Error", Font_7x10, White);
-    ssd1306_UpdateScreen();
-    dataRdyIntReceived = 1;
+
+    nbatch = ai_sine_run(sine, &ai_input[0], &ai_output[0]);
+    if (nbatch != 1) {
+      printf("Error: Could not run inference");
     }
+
+    y_val = ((float *)out_data)[0];
+    printf("The Value is: %f", y_val);
+
+    //! FOr now Imma gonna comment all the lcd and the accelerometer and gyro
+    //! outputs
+    // if (dataRdyIntReceived != 0) {
+    //   // CLear the LCD
+    //   ssd1306_Fill(Black);
+
+    //   dataRdyIntReceived = 0;
+
+    //   // Get the accelerometer values
+    //   LSM6DSL_Axes_t acc_axes, gyro_axes;
+    //   LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
+    //   LSM6DSL_GYRO_GetAxes(&MotionSensor, &gyro_axes);
+
+    //   printf("Accelerometer: % 5d, % 5d, % 5d\r\n", acc_axes.x, acc_axes.y,
+    //          acc_axes.z);
+    //   printf("Gyro Scope: % 5d, % 5d, % 5d\r\n", gyro_axes.x, gyro_axes.y,
+    //          gyro_axes.z);
+
+    //   char buffer[32];
+
+    //   sprintf(buffer, "X: %d", acc_axes.x);
+    //   ssd1306_SetCursor(0, 0);
+    //   ssd1306_WriteString(buffer, Font_7x10, White);
+
+    //   sprintf(buffer, "Y: %d", acc_axes.y);
+    //   ssd1306_SetCursor(0, 10);
+    //   ssd1306_WriteString(buffer, Font_7x10, White);
+
+    //   sprintf(buffer, "Z: %d", acc_axes.z);
+    //   ssd1306_SetCursor(0, 20);
+    //   ssd1306_WriteString(buffer, Font_7x10, White);
+    //   sprintf(buffer, "X: %d", gyro_axes.x);
+
+    //   ssd1306_SetCursor(0, 33);
+    //   ssd1306_WriteString(buffer, Font_7x10, White);
+
+    //   sprintf(buffer, "Y: %d", gyro_axes.y);
+    //   ssd1306_SetCursor(0, 43);
+    //   ssd1306_WriteString(buffer, Font_7x10, White);
+
+    //   sprintf(buffer, "Z: %d", gyro_axes.z);
+    //   ssd1306_SetCursor(0, 53);
+    //   ssd1306_WriteString(buffer, Font_7x10, White);
+
+    //   ssd1306_UpdateScreen();
+
+    //   HAL_Delay(100);
+    // } else {
+    //   printf("No Data to display\n");
+    //   ssd1306_Fill(Black);
+    //   ssd1306_SetCursor(0, 0);
+    //   ssd1306_WriteString("Error", Font_7x10, White);
+    //   ssd1306_UpdateScreen();
+    //   dataRdyIntReceived = 1;
+    // }
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -229,6 +293,34 @@ void SystemClock_Config(void) {
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK) {
     Error_Handler();
   }
+}
+
+/**
+ * @brief CRC Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_CRC_Init(void) {
+
+  /* USER CODE BEGIN CRC_Init 0 */
+
+  /* USER CODE END CRC_Init 0 */
+
+  /* USER CODE BEGIN CRC_Init 1 */
+
+  /* USER CODE END CRC_Init 1 */
+  hcrc.Instance = CRC;
+  hcrc.Init.DefaultPolynomialUse = DEFAULT_POLYNOMIAL_ENABLE;
+  hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_ENABLE;
+  hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_NONE;
+  hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_DISABLE;
+  hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_BYTES;
+  if (HAL_CRC_Init(&hcrc) != HAL_OK) {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CRC_Init 2 */
+
+  /* USER CODE END CRC_Init 2 */
 }
 
 /**
